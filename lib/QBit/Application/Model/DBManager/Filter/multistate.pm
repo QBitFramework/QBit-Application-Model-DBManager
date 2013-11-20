@@ -14,7 +14,8 @@ sub pre_process {
 
     $field->{'values'} = {
         map {$_->[0] => ref($_->[1]) eq 'CODE' ? $_->[1]() : $_->[1]}
-        grep {!$_->[2]{'private'}} @{$self->{'db_manager'}->get_multistates_bits()}
+          grep {!$_->[2]{'private'}}['__EMPTY__' => $self->{'db_manager'}->get_empty_name()],
+        @{$self->{'db_manager'}->get_multistates_bits()}
     };
 }
 
