@@ -56,7 +56,7 @@ sub get_db_filter_fields {
             throw Exception::BadArguments gettext('Unknown field "%s"', $field) unless exists($filter_fields->{$field});
         }
     }
-    my @fields = exists($opts{fields}) ? (@{delete($opts{fields})}) : (keys %$filter_fields);
+    my @fields = exists($opts{fields}) ? (@{$opts{fields}}) : (keys %$filter_fields);
 
     foreach my $field (@fields) {
         my $fdata = $filter_fields->{$field};
