@@ -172,6 +172,7 @@ sub get {
 
     my $pk_fields = $self->get_pk_fields();
 
+    $pk = {map {$pk_fields->[$_] => $pk->[$_]} 0 .. (@$pk_fields - 1)} if ref($pk) eq 'ARRAY';
     $pk = {$pk_fields->[0] => $pk} if ref($pk) ne 'HASH';
 
     my @missed_fields = grep {!exists($pk->{$_})} @$pk_fields;
