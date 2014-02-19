@@ -79,12 +79,12 @@ sub expressions {
     my $ns = lc(join('___', @{$opts{'ns'} || []}));
 
     return [
-        $uc_field_name 
+        $uc_field_name
           . " '='  "
           . ($ns ? "${ns}___" : '')
           . "${field_name}___multistate"
           . " { [$_[1] => '='  => \$_[3]] }",
-        $uc_field_name 
+        $uc_field_name
           . " '<>' "
           . ($ns ? "${ns}___" : '')
           . "${field_name}___multistate"
