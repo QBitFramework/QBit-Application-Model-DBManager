@@ -17,16 +17,37 @@ sub pre_process {
     if (exists($opts{multistate_groups}) && exists($opts{multistate_groups}{ref($self->{'db_manager'})})) {
         my @multistate_groups = @{$opts{multistate_groups}{ref($self->{'db_manager'})}};
 
-        if (in_array('__EMPTY__', \@multistate_groups)) {
+        if (   in_array('__EMPTY__', array_uniq(@multistate_groups))
+            || in_array('not __EMPTY__', array_uniq(@multistate_groups)))
+        {
             @multistate_bits = map {clone($_)} @multistate_bits;
 
             $_->[2]{'multistate_groups'} //= ['__EMPTY__'] foreach @multistate_bits;
         }
 
-        @multistate_bits = grep {
-            exists($_->[2]{'multistate_groups'})
-              && @{arrays_intersection($_->[2]{'multistate_groups'}, \@multistate_groups)}
-        } @multistate_bits;
+        my $get_group_multistates;
+        $get_group_multistates = sub {
+            my ($group, $multistate_bits) = @_;
+
+            return array_uniq(map {$get_group_multistates->($_, $multistate_bits)} @$group) if (ref($group) eq 'ARRAY');
+
+            my @apt_multistate_bits;
+            if ($group =~ s/^not //) {
+                @apt_multistate_bits =
+                  grep {!(exists($_->[2]{'multistate_groups'}) && in_array($group, $_->[2]{'multistate_groups'}))}
+                  @$multistate_bits;
+            } else {
+                @apt_multistate_bits =
+                  grep {exists($_->[2]{'multistate_groups'}) && in_array($group, $_->[2]{'multistate_groups'})}
+                  @$multistate_bits;
+            }
+
+            return [map {$_->[0]} @apt_multistate_bits];
+        };
+
+        my @multistate_names =
+          @{arrays_intersection(map {$get_group_multistates->($_, \@multistate_bits)} @multistate_groups)};
+        @multistate_bits = grep {in_array($_->[0], \@multistate_names)} @multistate_bits;
     }
 
     $field->{'values'} = {map {$_->[0] => ref($_->[1]) eq 'CODE' ? $_->[1]() : $_->[1]} @multistate_bits};
