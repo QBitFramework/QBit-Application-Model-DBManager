@@ -12,44 +12,16 @@ sub pre_process {
     throw gettext('Class "%s" must be descedant of "QBit::Application::Model::Multistate"', ref($self->{'db_manager'}))
       unless $self->{'db_manager'}->isa('QBit::Application::Model::Multistate');
 
-    my @multistate_bits = grep {!$_->[2]{'private'}} @{$self->{'db_manager'}->get_multistates_bits()};
+    my %multistate_ignore_flags = map {$_ => TRUE} @{$opts{multistate_ignore_flags}{ref($self->{'db_manager'})}}
+      if exists($opts{multistate_ignore_flags}) && exists($opts{multistate_ignore_flags}{ref($self->{'db_manager'})});
 
-    if (exists($opts{multistate_groups}) && exists($opts{multistate_groups}{ref($self->{'db_manager'})})) {
-        my @multistate_groups = @{$opts{multistate_groups}{ref($self->{'db_manager'})}};
-
-        if (grep {/(?:not )?__EMPTY__/} @{array_uniq(@multistate_groups)}) {
-            @multistate_bits = map {clone($_)} @multistate_bits;
-
-            $_->[2]{'multistate_groups'} //= ['__EMPTY__'] foreach @multistate_bits;
-        }
-
-        my @multistate_names =
-          @{arrays_intersection(map {$self->get_group_multistates($_, \@multistate_bits)} @multistate_groups)};
-        @multistate_bits = grep {in_array($_->[0], \@multistate_names)} @multistate_bits;
-    }
-
-    $field->{'values'} = {map {$_->[0] => ref($_->[1]) eq 'CODE' ? $_->[1]() : $_->[1]} @multistate_bits};
+    $field->{'values'} = {
+        map {$_->[0] => ref($_->[1]) eq 'CODE' ? $_->[1]() : $_->[1]}
+          grep {!$_->[2]{'private'} && !exists($multistate_ignore_flags{$_->[0]})}
+          @{$self->{'db_manager'}->get_multistates_bits()}
+    };
 
     return $field->{'values'};
-}
-
-sub get_group_multistates {
-    my ($self, $group, $multistate_bits) = @_;
-
-    return array_uniq(map {$self->get_group_multistates($_, $multistate_bits)} @$group) if (ref($group) eq 'ARRAY');
-
-    my @apt_multistate_bits;
-    if ($group =~ s/^not //) {
-        @apt_multistate_bits =
-          grep {!(exists($_->[2]{'multistate_groups'}) && in_array($group, $_->[2]{'multistate_groups'}))}
-          @$multistate_bits;
-    } else {
-        @apt_multistate_bits =
-          grep {exists($_->[2]{'multistate_groups'}) && in_array($group, $_->[2]{'multistate_groups'})}
-          @$multistate_bits;
-    }
-
-    return [map {$_->[0]} @apt_multistate_bits];
 }
 
 sub tokens {
@@ -79,12 +51,12 @@ sub expressions {
     my $ns = lc(join('___', @{$opts{'ns'} || []}));
 
     return [
-        $uc_field_name
+        $uc_field_name 
           . " '='  "
           . ($ns ? "${ns}___" : '')
           . "${field_name}___multistate"
           . " { [$_[1] => '='  => \$_[3]] }",
-        $uc_field_name
+        $uc_field_name 
           . " '<>' "
           . ($ns ? "${ns}___" : '')
           . "${field_name}___multistate"

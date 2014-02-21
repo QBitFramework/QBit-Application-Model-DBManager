@@ -57,8 +57,8 @@ sub get_db_filter_fields {
         }
     }
 
-    $opts{'multistate_groups'} = {ref($self) => $opts{'multistate_groups'}}
-      if exists($opts{'multistate_groups'}) && ref($opts{'multistate_groups'}) eq 'ARRAY';
+    $opts{'multistate_ignore_flags'} = {ref($self) => $opts{'multistate_ignore_flags'}}
+      if exists($opts{'multistate_ignore_flags'}) && ref($opts{'multistate_ignore_flags'}) eq 'ARRAY';
 
     my @fields = exists($opts{fields}) ? (@{delete($opts{fields})}) : (keys %$filter_fields);
 
