@@ -43,7 +43,7 @@ sub model_filter {
 sub get_model_fields {
     my ($self) = @_;
 
-    return package_stash(ref($self))->{'__MODEL_FIELDS__'};
+    return package_stash(ref($self) || $self)->{'__MODEL_FIELDS__'};
 }
 
 sub get_db_filter_fields {
