@@ -4,7 +4,7 @@ use qbit;
 
 use base qw(QBit::Application::Model::DBManager::Filter);
 
-sub need_tokens {return [qw(STRING NOT LIKE IN)]}
+sub need_tokens {return [qw(STRING NOT LIKE IN IS)]}
 
 sub nonterminals {
     return {
@@ -23,6 +23,8 @@ sub expressions {
         "$uc_field_name '<>'     STRING      { [$field_name => '<>'       => \$_[3]] }",
         "$uc_field_name LIKE     STRING      { [$field_name => 'LIKE'     => \$_[3]] }",
         "$uc_field_name NOT LIKE STRING      { [$field_name => 'NOT LIKE' => \$_[4]] }",
+        "$uc_field_name 'IS'     STRING      { [$field_name => 'IS'       => \$_[3]] }",
+        "$uc_field_name 'IS NOT' STRING      { [$field_name => 'IS NOT'   => \$_[3]] }",
         "$uc_field_name '='      string_list { [$field_name => '='        => \$_[3]] }",
         "$uc_field_name '<>'     string_list { [$field_name => '<>'       => \$_[3]] }",
         "$uc_field_name IN       string_list { [$field_name => 'IN'       => \$_[3]] }",
@@ -33,7 +35,7 @@ sub expressions {
 sub check {
     throw gettext('Bad data') unless !ref($_[1]->[2]) || ref($_[1]->[2]) eq 'ARRAY';
     throw gettext('Bad operation "%s"', $_[1]->[1])
-      unless in_array($_[1]->[1], [qw(= <> LIKE IN), 'NOT LIKE', 'NOT IN']);
+      unless in_array($_[1]->[1], [qw(= <> LIKE IN IS), 'NOT LIKE', 'NOT IN', 'IS NOT']);
 }
 
 sub as_text {
