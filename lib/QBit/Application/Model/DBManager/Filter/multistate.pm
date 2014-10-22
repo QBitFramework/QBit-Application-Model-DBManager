@@ -12,10 +12,16 @@ sub pre_process {
     throw gettext('Class "%s" must be descedant of "QBit::Application::Model::Multistate"', ref($self->{'db_manager'}))
       unless $self->{'db_manager'}->isa('QBit::Application::Model::Multistate');
 
+    my %multistate_ignore_flags = map {$_ => TRUE} @{$opts{multistate_ignore_flags}{ref($self->{'db_manager'})}}
+      if exists($opts{multistate_ignore_flags}) && exists($opts{multistate_ignore_flags}{ref($self->{'db_manager'})});
+
     $field->{'values'} = {
         map {$_->[0] => ref($_->[1]) eq 'CODE' ? $_->[1]() : $_->[1]}
-        grep {!$_->[2]{'private'}} @{$self->{'db_manager'}->get_multistates_bits()}
+          grep {!$_->[2]{'private'} && !exists($multistate_ignore_flags{$_->[0]})}
+          @{$self->{'db_manager'}->get_multistates_bits()}
     };
+
+    return $field->{'values'};
 }
 
 sub tokens {
@@ -45,12 +51,12 @@ sub expressions {
     my $ns = lc(join('___', @{$opts{'ns'} || []}));
 
     return [
-        $uc_field_name
+        $uc_field_name 
           . " '='  "
           . ($ns ? "${ns}___" : '')
           . "${field_name}___multistate"
           . " { [$_[1] => '='  => \$_[3]] }",
-        $uc_field_name
+        $uc_field_name 
           . " '<>' "
           . ($ns ? "${ns}___" : '')
           . "${field_name}___multistate"

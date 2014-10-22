@@ -56,6 +56,10 @@ sub get_db_filter_fields {
             throw Exception::BadArguments gettext('Unknown field "%s"', $field) unless exists($filter_fields->{$field});
         }
     }
+
+    $opts{'multistate_ignore_flags'} = {ref($self) => $opts{'multistate_ignore_flags'}}
+      if exists($opts{'multistate_ignore_flags'}) && ref($opts{'multistate_ignore_flags'}) eq 'ARRAY';
+
     my @fields = exists($opts{fields}) ? (@{delete($opts{fields})}) : (keys %$filter_fields);
 
     foreach my $field (@fields) {
