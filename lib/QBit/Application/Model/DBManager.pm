@@ -184,7 +184,7 @@ sub get_all_with_meta {
     my $data = $self->get_all(%opts);
 
     my %meta;
-    $meta{'last_fields'} = [keys($self->last_fields())] if $meta_opts{'last_fields'};
+    $meta{'last_fields'} = [keys(%{$self->last_fields()})] if $meta_opts{'last_fields'};
     $meta{'found_rows'}  = $self->found_rows()          if $meta_opts{'found_rows'};
 
     return {
