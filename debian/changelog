@@ -1,3 +1,9 @@
+libqbit-application-model-dbmanager-perl (0.015) raring; urgency=low
+
+  * Fix warning "keys on reference is experimental"
+
+ -- Sergei Svistunov <sergei-svistunov@yandex.ru>  Sun, 31 Jan 2016 13:23:26 +0300
+
 libqbit-application-model-dbmanager-perl (0.014) raring; urgency=low
 
   * Use ternary operator instead of || as 0 field name is valid.
