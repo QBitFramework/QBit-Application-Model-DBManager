@@ -421,3 +421,33 @@ sub _grammar_expr {
 }
 
 TRUE;
+
+__END__
+
+=encoding utf8
+
+=head1 Name
+ 
+QBit::Application::Model::DBManager - Class for smart working with DB.
+ 
+=head1 GitHub
+
+https://github.com/QBitFramework/QBit-Application-Model-DBManager
+
+=head1 Install
+
+=over
+ 
+=item *
+
+cpanm QBit::Application::Model::DBManager
+
+=item *
+
+apt-get install libqbit-application-model-dbmanager-perl (http://perlhub.ru/)
+
+=back
+
+For more information. please, see code.
+
+=cut
