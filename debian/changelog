@@ -1,3 +1,9 @@
+libqbit-application-model-dbmanager-perl (0.016) raring; urgency=low
+
+  * upload to cpan
+
+ -- Igor Sverdlov <igor-sverdlov@mail.ru>  Sun, 04 Sep 2016 22:53:30 +0300
+
 libqbit-application-model-dbmanager-perl (0.015) raring; urgency=low
 
   * Fix warning "keys on reference is experimental"
