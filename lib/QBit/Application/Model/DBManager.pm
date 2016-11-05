@@ -147,6 +147,10 @@ sub get_all {
     $self->{'__FOUND_ROWS__'} = $query->found_rows() if $opts{'calc_rows'};
 
     if (@$result) {
+        $self->timelog->start(gettext('Preprocess easy fields'));
+        $self->pre_process_easy_fields($fields, $result);
+        $self->timelog->finish();
+
         $self->timelog->start(gettext('Preprocess fields'));
         $self->pre_process_fields($fields, $result);
         $self->timelog->finish();
@@ -225,6 +229,92 @@ sub get_db_filter {
 }
 
 sub pre_process_fields { }
+
+sub pre_process_easy_fields {
+    my ($self, $obj_fields, $data) = @_;
+
+    my $fields = $obj_fields->get_fields();
+
+    my @easy_fields = grep {$obj_fields->need($_) && exists($fields->{$_}{'model_accessor'})} keys(%$fields);
+
+    my $pre_process_fields = {};
+    foreach my $field (@easy_fields) {
+        my $model_accessor = $fields->{$field}{'model_accessor'};
+        my $fk_fields      = join('#', @{$fields->{$field}{'fk_fields'}});
+        my $count          = 1;
+        map {$pre_process_fields->{$model_accessor}{$fk_fields}{'fields'}{$_} = TRUE} @{$fields->{$field}{'fields'}},
+          grep {!($count++ & 1)} @{$fields->{$field}{'fk_fields'}};
+        $pre_process_fields->{$model_accessor}{$fk_fields}{'fk_fields'} = $fields->{$field}{'fk_fields'};
+    }
+
+    my $DATA;
+
+    foreach my $model (keys(%$pre_process_fields)) {
+        foreach my $fk_fields (keys(%{$pre_process_fields->{$model}})) {
+            next if exists($DATA->{$model}{$fk_fields});
+            my $filter = {};
+            my $i      = 0;
+            while ($i < @{$pre_process_fields->{$model}{$fk_fields}{'fk_fields'}} - 1) {
+                my $j = $i + 1;
+                $filter->{$pre_process_fields->{$model}{$fk_fields}{'fk_fields'}[$j]} =
+                  array_uniq(map {$_->{$pre_process_fields->{$model}{$fk_fields}{'fk_fields'}[$i]}} @$data);
+                $i += 2;
+            }
+
+            $DATA->{$model}{$fk_fields} = $self->$model->get_all(
+                fields => [keys(%{$pre_process_fields->{$model}{$fk_fields}{'fields'}})],
+                filter => $filter
+            );
+        }
+    }
+
+    foreach my $field (@easy_fields) {
+        my $model     = $fields->{$field}{'model_accessor'};
+        my $fk_fields = join('#', @{$fields->{$field}{'fk_fields'}});
+        my $result    = $fields->{$field}{'result'} || 'SCALAR';
+        if (($result eq 'SCALAR' || $result eq 'HASH')
+            && !exists($obj_fields->{'__GROUP_DATA__'}{$model}{$fk_fields}{'SCALAR_HASH'}))
+        {
+            foreach $data (@{$DATA->{$model}{$fk_fields}}) {
+                my $count = 1;
+                my @key_list = map {$data->{$_}} grep {!($count++ & 1)} @{$fields->{$field}{'fk_fields'}};
+                $self->_add_key_with_hash(\$obj_fields->{'__GROUP_DATA__'}{$model}{$fk_fields}{'SCALAR_HASH'},
+                    \@key_list, 1, $data);
+            }
+        } elsif ($result eq 'ARRAY' && !exists($obj_fields->{'__GROUP_DATA__'}{$model}{$fk_fields}{'ARRAY'})) {
+            foreach my $data (@{$DATA->{$model}{$fk_fields}}) {
+                my $count = 1;
+                my @key_list = map {$data->{$_}} grep {!($count++ & 1)} @{$fields->{$field}{'fk_fields'}};
+                $self->_add_key_with_array(\$obj_fields->{'__GROUP_DATA__'}{$model}{$fk_fields}{'ARRAY'},
+                    \@key_list, 1, $data);
+            }
+        } else {
+            throw gettext('Unknown type of result "%s"', $result);
+        }
+    }
+}
+
+sub _add_key_with_hash {
+    my ($self, $hash, $key_list, $num, $value) = @_;
+
+    if (@$key_list == $num) {
+        $$hash->{$key_list->[$num - 1]} = $value;
+        return TRUE;
+    }
+
+    $self->_add_key_with_hash(\$$hash->{$key_list->[$num - 1]}, $key_list, ++$num, $value);
+}
+
+sub _add_key_with_array {
+    my ($self, $hash, $key_list, $num, $value) = @_;
+
+    if (@$key_list == $num) {
+        push(@{$$hash->{$key_list->[$num - 1]}}, $value);
+        return TRUE;
+    }
+
+    $self->_add_key_with_array(\$$hash->{$key_list->[$num - 1]}, $key_list, ++$num, $value);
+}
 
 sub _get_fields_obj {
     my ($self, $fields) = @_;

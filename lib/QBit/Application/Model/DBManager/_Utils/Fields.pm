@@ -90,6 +90,34 @@ sub process_data {
             my $val;
             if (exists($rec->{$field})) {
                 $val = $rec->{$field};
+            } elsif (exists($self->{'__FIELDS__'}{$field}{'model_accessor'})) {
+                my $model     = $self->{'__FIELDS__'}{$field}{'model_accessor'};
+                my $fk_fields = join('#', @{$self->{'__FIELDS__'}{$field}{'fk_fields'}});
+                my $result    = $self->{'__FIELDS__'}{$field}{'result'} || 'SCALAR';
+                my $count     = 1;
+                my @key_list  = map {$rec->{$_}} grep {$count++ & 1} @{$self->{'__FIELDS__'}{$field}{'fk_fields'}};
+                if ($result eq 'SCALAR') {
+                    my $value =
+                      $self->_get_value($self->{'__GROUP_DATA__'}{$model}{$fk_fields}{'SCALAR_HASH'}, \@key_list, 1);
+                    $val = $value->{$self->{'__FIELDS__'}{$field}{'fields'}[0]};
+                } elsif ($result eq 'HASH') {
+                    my $value =
+                      $self->_get_value($self->{'__GROUP_DATA__'}{$model}{$fk_fields}{'SCALAR_HASH'}, \@key_list, 1);
+                    $val = {map {$_ => $value->{$_}} @{$self->{'__FIELDS__'}{$field}{'fields'}}};
+                } elsif ($result eq 'ARRAY') {
+                    my $value =
+                      $self->_get_value($self->{'__GROUP_DATA__'}{$model}{$fk_fields}{'ARRAY'}, \@key_list, 1);
+                    if (@{$self->{'__FIELDS__'}{$field}{'fields'}} == 1) {
+                        $val = [map {$_->{$self->{'__FIELDS__'}{$field}{'fields'}[0]}} @$value];
+                    } else {
+                        $val = [];
+                        foreach my $row (@$value) {
+                            push(@$val, {map {$_ => $row->{$_}} @{$self->{'__FIELDS__'}{$field}{'fields'}}});
+                        }
+                    }
+                }
+                $val = $self->{'__FIELDS__'}{$field}{'get'}($self, $rec, $val)
+                  if exists($self->{'__FIELDS__'}{$field}{'get'});
             } elsif (exists($self->{'__FIELDS__'}{$field}{'get'})) {
                 $val = $rec->{$field} = $self->{'__FIELDS__'}{$field}{'get'}($self, $rec);
             } elsif ($self->{'__FIELDS__'}{$field}{'i18n'}) {
@@ -103,6 +131,16 @@ sub process_data {
         push(@res, \%new_rec);
     }
     return \@res;
+}
+
+sub _get_value {
+    my ($self, $hash, $key_list, $num) = @_;
+
+    if (@$key_list == $num) {
+        return $hash->{$key_list->[$num - 1]};
+    } else {
+        return $self->_get_value($hash->{$key_list->[$num - 1]}, $key_list, ++$num);
+    }
 }
 
 sub need {
