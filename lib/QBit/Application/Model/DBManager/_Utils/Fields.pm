@@ -7,102 +7,127 @@ use base qw(QBit::Class);
 __PACKAGE__->mk_ro_accessors('model');
 
 sub new {
-    my ($class, $opt, $fields, $model) = @_;
-
-    _init_field_deps($fields, $_) foreach keys(%$fields);
-    my $weighted = {};
-    $weighted->{$_} = _init_field_sort($weighted, $fields, $_, 0) foreach keys(%$fields);
+    my ($class, $fields, $orders, $opt, $model) = @_;
 
     my %res_fields;
+
     $opt = [grep {$fields->{$_}{'default'}} keys(%$fields)] unless defined($opt);
     $opt = [$opt] if ref($opt) ne 'ARRAY';
 
-    foreach (values(%$fields)) {
-        $_->{'check_rights'} = [$_->{'check_rights'}]
-          if defined($_->{'check_rights'}) && ref($_->{'check_rights'}) ne 'ARRAY';
-    }
-
+    my @unknown_fields = ();
     foreach my $field (@$opt) {
-        next unless exists($fields->{$field});
-        next if $fields->{$field}{'check_rights'} && !$model->check_rights(@{$fields->{$field}{'check_rights'}});
-        # Skipping field unless it's all depends are available
-        next
-          if $fields->{$field}{'depends_on'}
-              && @{$fields->{$field}{'depends_on'}} !=
-              grep {!$fields->{$_}{'check_rights'} || $model->check_rights(@{$fields->{$_}{'check_rights'}})}
-              @{$fields->{$field}{'depends_on'}};
+        unless (exists($fields->{$field})) {
+            push(@unknown_fields, $field);
+            next;
+        }
 
-        $res_fields{$field} = clone($fields->{$field});
+        next if $fields->{$field}{'check_rights'} && !$model->check_rights(@{$fields->{$field}{'check_rights'}});
+        $res_fields{$field} = $fields->{$field};
     }
 
+    throw gettext('In model %s not found follows fields: %s', ref($model), join(', ', @unknown_fields))
+      if @unknown_fields;
+
+    my @need_delete = ();
     foreach my $field (keys(%res_fields)) {
         if (exists($fields->{$field}{'depends_on'}) || exists($fields->{$field}{'forced_depends_on'})) {
             foreach
-              my $dep_field (@{$fields->{$field}{'depends_on'} || []}, @{$fields->{$field}{'forced_depends_on'} || []})
+              my $dep_field (@{$fields->{$field}{'depends_on'} // []}, @{$fields->{$field}{'forced_depends_on'} // []})
             {
                 unless (exists($res_fields{$dep_field})) {
-                    $res_fields{$dep_field} = clone($fields->{$dep_field});
-                    $res_fields{$dep_field}->{'need_delete'} = TRUE;
+                    $res_fields{$dep_field} = $fields->{$dep_field};
+                    push(@need_delete, $dep_field);
                 }
             }
         }
     }
 
-    my $fields_sorted = [sort {($weighted->{$a} || 0) <=> ($weighted->{$b} || 0) || $a cmp $b} keys(%res_fields)];
+    my @field_names_sorted = sort {($orders->{$a} || 0) <=> ($orders->{$b} || 0) || $a cmp $b} keys(%res_fields);
 
-    return $class->SUPER::new(__FIELDS__ => \%res_fields, __FIELD_NAMES__ => $fields_sorted, model => $model);
+    my $self = $class->SUPER::new(
+        __FIELDS__      => \%res_fields,
+        __FIELD_NAMES__ => \@field_names_sorted,
+        __NEED_DELETE__ => \@need_delete,
+        model           => $model
+    );
+
+    weaken($self->{'model'});
+
+    return $self;
 }
 
 sub get_fields {
     my ($self) = @_;
 
-    return clone(\%{$self->{'__FIELDS__'}});
+    return clone($self->{'__FIELDS__'});
+}
+
+sub need_delete {
+    return @{$_[0]->{'__NEED_DELETE__'}};
 }
 
 sub get_db_fields {
-    my ($self, $table, %opts) = @_;
+    my ($self, $table) = @_;
 
     my %res    = ();
-    my $fields = $self->get_fields();
+    my $fields = $self->{'__FIELDS__'};
 
-    foreach my $field_name (
-        grep {
-                 (!defined($table) && $fields->{$_}{'db'})
-              || (defined($table) && ($fields->{$_}{'db'} || '') eq ($table || ''))
-        } keys(%$fields)
-      )
-    {
-        $res{$field_name} = defined($fields->{$field_name}{'db_expr'}) ? $fields->{$field_name}{'db_expr'} : '';
+    if (defined($table)) {
+        foreach my $field_name (keys(%$fields)) {
+            next unless ($fields->{$field_name}{'db'} || '') eq ($table || '');
+            $res{$field_name} = defined($fields->{$field_name}{'db_expr'}) ? $fields->{$field_name}{'db_expr'} : '';
+        }
+    } else {
+        foreach my $field_name (keys(%$fields)) {
+            next unless $fields->{$field_name}{'db'};
+            $res{$field_name} = defined($fields->{$field_name}{'db_expr'}) ? $fields->{$field_name}{'db_expr'} : '';
+        }
     }
 
     return \%res;
 }
 
 sub process_data {
-    my ($self, $data) = @_;
+    my ($self, $data, $all_locales) = @_;
 
-    my @fields = @{$self->{'__FIELD_NAMES__'}};
+    my $fields_hs = $self->{'__FIELDS__'};
 
-    my @res;
-    foreach my $rec (@$data) {
-        my %new_rec;
-        foreach my $field (@fields) {
-            my $val;
-            if (exists($rec->{$field})) {
-                $val = $rec->{$field};
-            } elsif (exists($self->{'__FIELDS__'}{$field}{'get'})) {
-                $val = $rec->{$field} = $self->{'__FIELDS__'}{$field}{'get'}($self, $rec);
-            } elsif ($self->{'__FIELDS__'}{$field}{'i18n'}) {
-                $val = {map {$_ => $rec->{"${field}_${_}"}} keys(%{$self->model->get_option('locales', {})})};
-            } else {
-                throw gettext('Cannot get field "%s"', $field);
+    my @locale_names;
+
+    my @process = ();
+    foreach my $field (@{$self->{'__FIELD_NAMES__'}}) {
+        if (exists($fields_hs->{$field}{'get'})) {
+            push(@process, {name => $field, process => $fields_hs->{$field}{'get'}});
+        } elsif ($all_locales && $fields_hs->{$field}{'i18n'}) {
+            unless (@locale_names) {
+                @locale_names = keys(%{$self->model->app->get_option('locales', {})});
             }
-            # store and skip implicit fields
-            $new_rec{$field} = $val unless ($self->{'__FIELDS__'}{$field}{'need_delete'});
+
+            push(
+                @process,
+                {
+                    name    => $field,
+                    process => sub {
+                        return {map {$_ => delete($_[1]->{"${field}_$_"})} @locale_names};
+                      }
+                }
+            );
         }
-        push(@res, \%new_rec);
     }
-    return \@res;
+
+    return $data unless @process;
+
+    my @need_delete = $self->need_delete();
+
+    foreach my $rec (@$data) {
+        foreach my $p (@process) {
+            $rec->{$p->{'name'}} = $p->{'process'}($self, $rec);
+        }
+
+        delete($rec->{$_}) foreach @need_delete;
+    }
+
+    return $data;
 }
 
 sub need {
@@ -111,42 +136,95 @@ sub need {
     return exists($self->{'__FIELDS__'}{$name});
 }
 
+sub init_fields {
+    my ($self, $original_fields) = @_;
+
+    my $fields = clone($original_fields);
+
+    _init_field_deps($fields, $_) foreach keys(%$fields);
+
+    foreach my $name (keys(%$fields)) {
+        my $fld = $fields->{$name};
+        my @rights;
+
+        if ($fld->{'depends_on'}) {
+            @rights = map {
+                defined($fields->{$_}{'check_rights'})
+                  ? (
+                    ref($fields->{$_}{'check_rights'}) eq 'ARRAY'
+                    ? @{$fields->{$_}{'check_rights'}}
+                    : $fields->{$_}{'check_rights'}
+                  )
+                  : ()
+            } @{$fld->{'depends_on'}};
+        }
+
+        if (@rights) {
+            $fld->{'check_rights'} =
+              array_uniq(@rights, (defined($fld->{'check_rights'}) ? $fld->{'check_rights'} : ()));
+        } elsif (defined($fld->{'check_rights'}) && ref($fld->{'check_rights'}) ne 'ARRAY') {
+            $fld->{'check_rights'} = [$fld->{'check_rights'}];
+        }
+    }
+
+    return $fields;
+}
+
 sub _init_field_deps {
     my ($fields, $name) = @_;
 
     throw gettext('Field "%s" does not exists', $name) unless exists($fields->{$name});
 
-    my %deps;
-    foreach (qw(depends_on forced_depends_on)) {
-        $deps{$_} = defined($fields->{$name}{$_}) ? $fields->{$name}{$_} : [];
-        $deps{$_} = [$deps{$_}] if ref($deps{$_}) ne 'ARRAY';
+    my $fld         = $fields->{$name};
+    my $deps        = $fld->{'depends_on'} // [];
+    my $forced_deps = $fld->{'forced_depends_on'} // [];
+
+    $deps        = [$deps]        if ref($deps)        ne 'ARRAY';
+    $forced_deps = [$forced_deps] if ref($forced_deps) ne 'ARRAY';
+
+    if (@$deps || @$forced_deps) {
+        my @results = map {_init_field_deps($fields, $_)} @$deps, @$forced_deps;
+
+        $deps        = array_uniq($deps,        map {$_->{'depends_on'}} @results);
+        $forced_deps = array_uniq($forced_deps, map {$_->{'forced_depends_on'}} @results);
     }
 
-    if (map {@$_} values(%deps)) {
-        foreach my $dep (map {_init_field_deps($fields, $_)} @{$deps{'depends_on'}}) {
-            push(@{$deps{$_}}, @{$dep->{$_}}) foreach qw(depends_on forced_depends_on);
-        }
-        foreach my $dep (map {_init_field_deps($fields, $_)} @{$deps{'forced_depends_on'}}) {
-            push(@{$deps{'forced_depends_on'}}, @{$dep->{$_}}) foreach qw(depends_on forced_depends_on);
-        }
-
-        foreach (qw(depends_on forced_depends_on)) {
-            $fields->{$name}{$_} = array_uniq($deps{$_}) if $deps{$_};
-        }
+    if (@$deps) {
+        $fld->{'depends_on'} = $deps;
+    } else {
+        delete $fld->{'depends_on'};
     }
 
-    return \%deps;
+    if (@$forced_deps) {
+        $fld->{'forced_depends_on'} = $forced_deps;
+    } else {
+        delete $fld->{'forced_depends_on'};
+    }
+
+    return {
+        depends_on        => $deps,
+        forced_depends_on => $forced_deps,
+    };
+}
+
+sub init_field_sort {
+    my ($self, $fields) = @_;
+
+    my $orders = {};
+    $orders->{$_} = _init_field_sort($orders, $fields, $_, 0) foreach keys(%$fields);
+
+    return $orders;
 }
 
 sub _init_field_sort {
-    my ($weighted, $fields, $name, $level) = @_;
+    my ($orders, $fields, $name, $level) = @_;
 
-    return $weighted->{$name} + $level if exists($weighted->{$name});
+    return $orders->{$name} + $level if exists($orders->{$name});
 
-    my @foreign_fields = (@{$fields->{$name}{'depends_on'} || []}, @{$fields->{$name}{'forced_depends_on'} || []});
+    my @foreign_fields = (@{$fields->{$name}{'depends_on'} // []}, @{$fields->{$name}{'forced_depends_on'} // []});
 
     return @foreign_fields
-      ? array_max(map {_init_field_sort($weighted, $fields, $_, $level + 1)} @foreign_fields)
+      ? array_max(map {_init_field_sort($orders, $fields, $_, $level + 1)} @foreign_fields)
       : $level;
 }
 
