@@ -93,14 +93,16 @@ sub process_data {
     my $fields_hs = $self->{'__FIELDS__'};
 
     my @locale_names;
+    my $cached_locales;
 
     my @process = ();
     foreach my $field (@{$self->{'__FIELD_NAMES__'}}) {
         if (exists($fields_hs->{$field}{'get'})) {
             push(@process, {name => $field, process => $fields_hs->{$field}{'get'}});
         } elsif ($all_locales && $fields_hs->{$field}{'i18n'}) {
-            unless (@locale_names) {
+            unless ($cached_locales) {
                 @locale_names = keys(%{$self->model->app->get_option('locales', {})});
+                $cached_locales++;
             }
 
             push(
