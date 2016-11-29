@@ -28,15 +28,15 @@ sub new {
     throw gettext('In model %s not found follows fields: %s', ref($model), join(', ', @unknown_fields))
       if @unknown_fields;
 
-    my @need_delete = ();
+    my %need_delete = ();
     foreach my $field (keys(%res_fields)) {
         if (exists($fields->{$field}{'depends_on'}) || exists($fields->{$field}{'forced_depends_on'})) {
             foreach
               my $dep_field (@{$fields->{$field}{'depends_on'} // []}, @{$fields->{$field}{'forced_depends_on'} // []})
             {
                 unless (exists($res_fields{$dep_field})) {
-                    $res_fields{$dep_field} = $fields->{$dep_field};
-                    push(@need_delete, $dep_field);
+                    $res_fields{$dep_field}  = $fields->{$dep_field};
+                    $need_delete{$dep_field} = TRUE;
                 }
             }
         }
@@ -47,7 +47,7 @@ sub new {
     my $self = $class->SUPER::new(
         __FIELDS__      => \%res_fields,
         __FIELD_NAMES__ => \@field_names_sorted,
-        __NEED_DELETE__ => \@need_delete,
+        __NEED_DELETE__ => [keys(%need_delete)],
         model           => $model
     );
 
@@ -117,16 +117,16 @@ sub process_data {
         }
     }
 
-    return $data unless @process;
-
     my @need_delete = $self->need_delete();
 
-    foreach my $rec (@$data) {
-        foreach my $p (@process) {
-            $rec->{$p->{'name'}} = $p->{'process'}($self, $rec);
-        }
+    if (@process || @need_delete) {
+        foreach my $rec (@$data) {
+            foreach my $p (@process) {
+                $rec->{$p->{'name'}} = $p->{'process'}($self, $rec);
+            }
 
-        delete($rec->{$_}) foreach @need_delete;
+            delete($rec->{$_}) foreach @need_delete;
+        }
     }
 
     return $data;
