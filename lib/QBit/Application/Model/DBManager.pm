@@ -18,13 +18,16 @@ __PACKAGE__->abstract_methods(qw(query add));
 sub model_fields {
     my ($class, %fields) = @_;
 
-    package_stash($class)->{'__MODEL_FIELDS__'} = \%fields;
-}
+    my $fields = \%fields;
+    my $inited_fields;
 
-sub define_fields {
-    my ($self, $opt_fields, %fields) = @_;
+    package_stash($class)->{'__MODEL_FIELDS__'} = $fields;
 
-    return QBit::Application::Model::DBManager::_Utils::Fields->new($opt_fields, \%fields, $self);
+    package_stash($class)->{'__MODEL_FIELDS_INITIALIZED__'} = $inited_fields =
+      QBit::Application::Model::DBManager::_Utils::Fields->init_fields($fields);
+
+    package_stash($class)->{'__MODEL_FIELDS_SORT_ORDERS__'} =
+      QBit::Application::Model::DBManager::_Utils::Fields->init_field_sort($inited_fields);
 }
 
 sub model_filter {
@@ -53,7 +56,8 @@ sub get_db_filter_fields {
 
     if (exists($opts{fields})) {
         foreach my $field (@{$opts{fields}}) {
-            throw Exception::BadArguments gettext('Unknown field "%s"', $field) unless exists($filter_fields->{$field});
+            throw Exception::BadArguments gettext('Filter by unknown field "%s" in model %s', $field, ref($self))
+              unless exists($filter_fields->{$field});
         }
     }
     my @fields = exists($opts{fields}) ? (@{delete($opts{fields})}) : (keys %$filter_fields);
@@ -114,11 +118,12 @@ sub get_all {
 
     $self->timelog->start(gettext('%s: get_all', ref($self)));
 
-    my $fields = $self->_get_fields_obj($opts{'fields'});
+    my $fields = $self->_get_fields_obj($opts{'fields'}, $opts{'all_locales'});
 
     my $last_fields = $fields->get_fields();
-    foreach (keys(%$last_fields)) {    # Hide unavailable fields
-        delete($last_fields->{$_}) if $last_fields->{$_}{'need_delete'};
+    foreach ($fields->need_delete) {
+        # Hide unavailable fields
+        delete($last_fields->{$_});
     }
 
     my $query = $self->query(
@@ -130,7 +135,9 @@ sub get_all {
     $query->for_update if $opts{'for_update'};
 
     if ($opts{'order_by'}) {
-        my %db_fields = map {$_ => TRUE} keys(%{$fields->get_db_fields()});
+        my $all_fields = $self->_get_fields_obj([keys(%{$self->get_model_fields()})]);
+
+        my %db_fields = map {$_ => TRUE} keys(%{$all_fields->get_db_fields()});
 
         my @order_by = map {[ref($_) ? ($_->[0], $_->[1]) : ($_, 0)]}
           grep {exists($db_fields{ref($_) ? $_->[0] : $_})} @{$opts{'order_by'}};
@@ -185,7 +192,7 @@ sub get_all_with_meta {
 
     my %meta;
     $meta{'last_fields'} = [keys(%{$self->last_fields()})] if $meta_opts{'last_fields'};
-    $meta{'found_rows'}  = $self->found_rows()          if $meta_opts{'found_rows'};
+    $meta{'found_rows'}  = $self->found_rows()             if $meta_opts{'found_rows'};
 
     return {
         data => $data,
@@ -227,9 +234,15 @@ sub get_db_filter {
 sub pre_process_fields { }
 
 sub _get_fields_obj {
-    my ($self, $fields) = @_;
+    my ($self, $fields, $all_locales) = @_;
 
-    return $self->define_fields($fields, %{$self->get_model_fields()});
+    my $stash = package_stash(ref($self));
+
+    return QBit::Application::Model::DBManager::_Utils::Fields->new(
+        $stash->{'__MODEL_FIELDS_INITIALIZED__'},
+        $stash->{'__MODEL_FIELDS_SORT_ORDERS__'},
+        $fields, $self, $all_locales
+    );
 }
 
 sub _db {
