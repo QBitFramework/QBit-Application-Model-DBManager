@@ -118,7 +118,7 @@ sub get_all {
 
     $self->timelog->start(gettext('%s: get_all', ref($self)));
 
-    my $fields = $self->_get_fields_obj($opts{'fields'});
+    my $fields = $self->_get_fields_obj($opts{'fields'}, $opts{'all_locales'});
 
     my $last_fields = $fields->get_fields();
     foreach ($fields->need_delete) {
@@ -159,7 +159,7 @@ sub get_all {
         $self->timelog->finish();
 
         $self->timelog->start(gettext('Process data'));
-        $result = $fields->process_data($result, $opts{'all_locales'});
+        $result = $fields->process_data($result);
         $self->timelog->finish();
     }
 
@@ -234,14 +234,14 @@ sub get_db_filter {
 sub pre_process_fields { }
 
 sub _get_fields_obj {
-    my ($self, $fields) = @_;
+    my ($self, $fields, $all_locales) = @_;
 
     my $stash = package_stash(ref($self));
 
     return QBit::Application::Model::DBManager::_Utils::Fields->new(
         $stash->{'__MODEL_FIELDS_INITIALIZED__'},
         $stash->{'__MODEL_FIELDS_SORT_ORDERS__'},
-        $fields, $self
+        $fields, $self, $all_locales
     );
 }
 

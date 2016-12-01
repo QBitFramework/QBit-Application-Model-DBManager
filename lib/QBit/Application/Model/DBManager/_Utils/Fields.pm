@@ -7,7 +7,7 @@ use base qw(QBit::Class);
 __PACKAGE__->mk_ro_accessors('model');
 
 sub new {
-    my ($class, $fields, $orders, $opt, $model) = @_;
+    my ($class, $fields, $orders, $opt, $model, $all_locales) = @_;
 
     my %res_fields;
 
@@ -42,13 +42,36 @@ sub new {
         }
     }
 
-    my @field_names_sorted = sort {($orders->{$a} || 0) <=> ($orders->{$b} || 0) || $a cmp $b} keys(%res_fields);
+    my @locale_names;
+    my $cached_locales;
+
+    my @process_fields;
+    foreach my $field (sort {($orders->{$a} || 0) <=> ($orders->{$b} || 0) || $a cmp $b} keys(%res_fields)) {
+        if (exists($res_fields{$field}->{'get'})) {
+            push(@process_fields, {name => $field, process => $res_fields{$field}->{'get'}});
+        } elsif ($all_locales && $res_fields{$field}->{'i18n'}) {
+            unless ($cached_locales) {
+                @locale_names = keys(%{$model->app->get_option('locales', {})});
+                $cached_locales++;
+            }
+
+            push(
+                @process_fields,
+                {
+                    name    => $field,
+                    process => sub {
+                        return {map {$_ => delete($_[1]->{"${field}_$_"})} @locale_names};
+                      }
+                }
+            );
+        }
+    }
 
     my $self = $class->SUPER::new(
         __FIELDS__      => \%res_fields,
-        __FIELD_NAMES__ => \@field_names_sorted,
+        __PROC_FIELDS__ => \@process_fields,
         __NEED_DELETE__ => [keys(%need_delete)],
-        model           => $model
+        model           => $model,
     );
 
     weaken($self->{'model'});
@@ -59,7 +82,7 @@ sub new {
 sub get_fields {
     my ($self) = @_;
 
-    return clone($self->{'__FIELDS__'});
+    return {%{$self->{'__FIELDS__'}}};
 }
 
 sub need_delete {
@@ -88,40 +111,13 @@ sub get_db_fields {
 }
 
 sub process_data {
-    my ($self, $data, $all_locales) = @_;
-
-    my $fields_hs = $self->{'__FIELDS__'};
-
-    my @locale_names;
-    my $cached_locales;
-
-    my @process = ();
-    foreach my $field (@{$self->{'__FIELD_NAMES__'}}) {
-        if (exists($fields_hs->{$field}{'get'})) {
-            push(@process, {name => $field, process => $fields_hs->{$field}{'get'}});
-        } elsif ($all_locales && $fields_hs->{$field}{'i18n'}) {
-            unless ($cached_locales) {
-                @locale_names = keys(%{$self->model->app->get_option('locales', {})});
-                $cached_locales++;
-            }
-
-            push(
-                @process,
-                {
-                    name    => $field,
-                    process => sub {
-                        return {map {$_ => delete($_[1]->{"${field}_$_"})} @locale_names};
-                      }
-                }
-            );
-        }
-    }
+    my ($self, $data) = @_;
 
     my @need_delete = $self->need_delete();
 
-    if (@process || @need_delete) {
+    if (@{$self->{__PROC_FIELDS__}} || @need_delete) {
         foreach my $rec (@$data) {
-            foreach my $p (@process) {
+            foreach my $p (@{$self->{__PROC_FIELDS__}}) {
                 $rec->{$p->{'name'}} = $p->{'process'}($self, $rec);
             }
 
