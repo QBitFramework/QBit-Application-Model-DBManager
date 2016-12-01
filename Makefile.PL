@@ -25,11 +25,12 @@ my %WriteMakefileArgs = (
   },
   "TEST_REQUIRES" => {
     "FindBin" => 0,
+    "QBit::Application" => 0,
     "Test::Deep" => 0,
     "Test::More" => 0,
     "lib" => 0
   },
-  "VERSION" => "0.016",
+  "VERSION" => "0.017",
   "test" => {
     "TESTS" => "t/*.t"
   }
@@ -40,6 +41,7 @@ my %FallbackPrereqs = (
   "Exception" => 0,
   "FindBin" => 0,
   "Parse::Eyapp" => 0,
+  "QBit::Application" => 0,
   "QBit::Application::Model" => 0,
   "QBit::Class" => 0,
   "Test::Deep" => 0,

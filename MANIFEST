@@ -22,4 +22,9 @@ lib/QBit/Application/Model/DBManager/Filter/number.pm
 lib/QBit/Application/Model/DBManager/Filter/subfilter.pm
 lib/QBit/Application/Model/DBManager/Filter/text.pm
 lib/QBit/Application/Model/DBManager/_Utils/Fields.pm
+t/lib/TestApplication.pm
+t/lib/TestApplication/Model/TestModel.pm
+t/lib/TestQuery.pm
+t/lib/TestTimeLog.pm
+t/qbit_application_model_dbmanager_fields.t
 t/qbit_application_model_dbmanager_filter.t

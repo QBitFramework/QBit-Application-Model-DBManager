@@ -1,3 +1,15 @@
+libqbit-application-model-dbmanager-perl (0.017) raring; urgency=low
+
+  * all_locales and process fields in new
+
+  * unique delete fields and process_data if need delete fields
+
+  * cached_locales
+
+  * speed up
+
+ -- Igor Sverdlov <igor-sverdlov@mail.ru>  Thu, 01 Dec 2016 22:46:36 +0300
+
 libqbit-application-model-dbmanager-perl (0.016) raring; urgency=low
 
   * upload to cpan
